@@ -2,6 +2,8 @@
 
 Extra small system monitor for X11.
 
+[![Build Status](https://travis-ci.com/xsmon/xsmon.svg)](https://travis-ci.com/xsmon/xsmon)
+
 ## Screenshot
 
 ![screenshot](/screen.gif?raw=true)
