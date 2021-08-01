@@ -272,7 +272,7 @@ void draw_icon(xcb_connection_t *connection, bool tick, icon_t icon)
 
     uint32_t fg_color = icon.fg_color;
     uint32_t bg_color = icon.bg_color;
-    if (tick && icon.buffer.data[icon.buffer.head - 1] > icon.alert_theshold) {
+    if (tick && icon.buffer.data[icon.buffer.head - 1] > (double)icon.alert_theshold) {
         fg_color = icon.alert_fg_color;
         bg_color = icon.alert_bg_color;
     }
@@ -362,9 +362,11 @@ int main(int argc, char *argv[])
 
     parse_args(argc, argv);
 
-    bool tick = false;
-    icon_t cpu_icon = {0};
-    icon_t mem_icon = {0};
+    icon_t cpu_icon;
+    memset(&cpu_icon, 0, sizeof(icon_t));
+
+    icon_t mem_icon;
+    memset(&mem_icon, 0, sizeof(icon_t));
 
     int preferred_screen;
     xcb_connection_t *connection = xcb_connect(NULL, &preferred_screen);
@@ -375,6 +377,7 @@ int main(int argc, char *argv[])
     dock_window(connection, preferred_screen, cpu_icon.window);
     dock_window(connection, preferred_screen, mem_icon.window);
 
+    bool tick = false;
     xcb_generic_event_t *event;
     while (true) {
         while ((event = xcb_poll_for_event(connection))) {
