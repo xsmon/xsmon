@@ -108,12 +108,30 @@ void print_usage()
 {
     printf("Usage: %s [options]\n", g_progname);
     printf("\n");
-    printf("  --bg_color RGB       background color (default: '#%x')\n", g_options.bg_color);
-    printf("  --cpu_color RGB      cpu color (default: '#%x')\n", g_options.cpu_color);
-    printf("  --mem_color RGB      memory color (default: '#%x')\n", g_options.mem_color);
-    printf("  --alert_color RGBA   alert color (default: '#%x')\n", g_options.alert_color);
-    printf("  --cpu_alert NUM      cpu alert threshold percentage (default: %zu)\n", g_options.cpu_alert_threshold);
-    printf("  --mem_alert NUM      memory alert threshold percentage (default: %zu)\n", g_options.mem_alert_threshold);
+    printf(
+        "  --bg_color RGB"
+        "       background color (default: '#%x')\n",
+        g_options.bg_color);
+    printf(
+        "  --cpu_color RGB"
+        "      cpu color (default: '#%x')\n",
+        g_options.cpu_color);
+    printf(
+        "  --mem_color RGB"
+        "      memory color (default: '#%x')\n",
+        g_options.mem_color);
+    printf(
+        "  --alert_color RGBA"
+        "   alert color (default: '#%x')\n",
+        g_options.alert_color);
+    printf(
+        "  --cpu_alert NUM"
+        "      cpu alert threshold percentage (default: %zu)\n",
+        g_options.cpu_alert_threshold);
+    printf(
+        "  --mem_alert NUM"
+        "      memory alert threshold percentage (default: %zu)\n",
+        g_options.mem_alert_threshold);
     printf("  -v, --version        version number\n");
     printf("  -h, --help           print this message\n");
 }
@@ -158,10 +176,12 @@ void parse_args(int argc, char *argv[])
         } else if (strcmp(argv[i], "--mem_alert") == 0) {
             ++i;
             g_options.mem_alert_threshold = (size_t)strtol(argv[i], NULL, 10);
-        } else if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) {
+        } else if (strcmp(argv[i], "-h") == 0 ||
+                   strcmp(argv[i], "--help") == 0) {
             print_usage();
             exit(EXIT_SUCCESS);
-        } else if (strcmp(argv[i], "-v") == 0 || strcmp(argv[i], "--version") == 0) {
+        } else if (strcmp(argv[i], "-v") == 0 ||
+                   strcmp(argv[i], "--version") == 0) {
             printf("%s\n", VERSION);
             exit(EXIT_SUCCESS);
         } else if (argv[i][0] == '-') {  // check if it's an option
@@ -186,8 +206,10 @@ void parse_args(int argc, char *argv[])
 xcb_atom_t get_atom(xcb_connection_t *connection, const char *name)
 {
     xcb_atom_t atom;
-    xcb_intern_atom_cookie_t cookie = xcb_intern_atom(connection, 0, (uint16_t)strlen(name), name);
-    xcb_intern_atom_reply_t *reply = xcb_intern_atom_reply(connection, cookie, NULL);
+    xcb_intern_atom_cookie_t cookie =
+        xcb_intern_atom(connection, 0, (uint16_t)strlen(name), name);
+    xcb_intern_atom_reply_t *reply =
+        xcb_intern_atom_reply(connection, cookie, NULL);
     if (!reply) {
         print_error("xcb_intern_atom failed\n");
         exit(EXIT_FAILURE);
@@ -198,15 +220,19 @@ xcb_atom_t get_atom(xcb_connection_t *connection, const char *name)
     return atom;
 }
 
-void dock_window(xcb_connection_t *connection, int preferred_screen, xcb_window_t window)
+void dock_window(xcb_connection_t *connection, int preferred_screen,
+                 xcb_window_t window)
 {
     xcb_window_t selection_owner_window;
     {
         char atom_name[21];
-        snprintf(atom_name, sizeof atom_name, "_NET_SYSTEM_TRAY_S%d", preferred_screen);
+        snprintf(atom_name, sizeof atom_name, "_NET_SYSTEM_TRAY_S%d",
+                 preferred_screen);
         xcb_atom_t net_system_tray_sdefault = get_atom(connection, atom_name);
-        xcb_get_selection_owner_cookie_t cookie = xcb_get_selection_owner(connection, net_system_tray_sdefault);
-        xcb_get_selection_owner_reply_t *reply = xcb_get_selection_owner_reply(connection, cookie, NULL);
+        xcb_get_selection_owner_cookie_t cookie =
+            xcb_get_selection_owner(connection, net_system_tray_sdefault);
+        xcb_get_selection_owner_reply_t *reply =
+            xcb_get_selection_owner_reply(connection, cookie, NULL);
         if (!reply) {
             print_error("xcb_get_selection_owner_reply failed\n");
             exit(EXIT_FAILURE);
@@ -227,15 +253,18 @@ void dock_window(xcb_connection_t *connection, int preferred_screen, xcb_window_
         event.data.data32[2] = window;
         event.data.data32[3] = 0;
         event.data.data32[4] = 0;
-        xcb_send_event(connection, 0, selection_owner_window, XCB_EVENT_MASK_NO_EVENT, (const char *)&event);
+        xcb_send_event(connection, 0, selection_owner_window,
+                       XCB_EVENT_MASK_NO_EVENT, (const char *)&event);
     }
 
     xcb_flush(connection);
 }
 
-void create_icon(xcb_connection_t *connection, const char *name, uint32_t fg_color, size_t alert_theshold, icon_t *icon)
+void create_icon(xcb_connection_t *connection, const char *name,
+                 uint32_t fg_color, size_t alert_theshold, icon_t *icon)
 {
-    xcb_screen_t *screen = xcb_setup_roots_iterator(xcb_get_setup(connection)).data;
+    xcb_screen_t *screen =
+        xcb_setup_roots_iterator(xcb_get_setup(connection)).data;
 
     icon->buffer.data = NULL;
     icon->buffer.capacity = 0;
@@ -251,14 +280,18 @@ void create_icon(xcb_connection_t *connection, const char *name, uint32_t fg_col
     icon->alert_theshold = alert_theshold;
 
     icon->window = xcb_generate_id(connection);
-    xcb_create_window(connection, XCB_COPY_FROM_PARENT, icon->window, screen->root, 0, 0, icon->width, icon->height, 0,
-                      XCB_WINDOW_CLASS_INPUT_OUTPUT, screen->root_visual, XCB_CW_BACK_PIXEL | XCB_CW_EVENT_MASK,
-                      (const uint32_t[]){screen->black_pixel, XCB_EVENT_MASK_EXPOSURE});
+    xcb_create_window(
+        connection, XCB_COPY_FROM_PARENT, icon->window, screen->root, 0, 0,
+        icon->width, icon->height, 0, XCB_WINDOW_CLASS_INPUT_OUTPUT,
+        screen->root_visual, XCB_CW_BACK_PIXEL | XCB_CW_EVENT_MASK,
+        (const uint32_t[]){screen->black_pixel, XCB_EVENT_MASK_EXPOSURE});
 
     icon->gc = xcb_generate_id(connection);
-    xcb_create_gc(connection, icon->gc, icon->window, XCB_GC_FOREGROUND, (uint32_t[]){screen->black_pixel});
+    xcb_create_gc(connection, icon->gc, icon->window, XCB_GC_FOREGROUND,
+                  (uint32_t[]){screen->black_pixel});
 
-    xcb_change_property(connection, XCB_PROP_MODE_REPLACE, icon->window, XCB_ATOM_WM_NAME, XCB_ATOM_STRING, 8,
+    xcb_change_property(connection, XCB_PROP_MODE_REPLACE, icon->window,
+                        XCB_ATOM_WM_NAME, XCB_ATOM_STRING, 8,
                         (uint32_t)strlen(name), name);
 
     xcb_flush(connection);
@@ -272,21 +305,27 @@ void draw_icon(xcb_connection_t *connection, bool tick, icon_t icon)
 
     uint32_t fg_color = icon.fg_color;
     uint32_t bg_color = icon.bg_color;
-    if (tick && icon.buffer.data[icon.buffer.head - 1] > (double)icon.alert_theshold) {
+    if (tick &&
+        icon.buffer.data[icon.buffer.head - 1] > (double)icon.alert_theshold) {
         fg_color = icon.alert_fg_color;
         bg_color = icon.alert_bg_color;
     }
 
-    xcb_change_gc(connection, icon.gc, XCB_GC_FOREGROUND, (uint32_t[]){bg_color});
+    xcb_change_gc(connection, icon.gc, XCB_GC_FOREGROUND,
+                  (uint32_t[]){bg_color});
     xcb_rectangle_t rect = {0, 0, icon.width, icon.height};
     xcb_poly_fill_rectangle(connection, icon.window, icon.gc, 1, &rect);
 
-    xcb_change_gc(connection, icon.gc, XCB_GC_FOREGROUND, (uint32_t[]){fg_color});
+    xcb_change_gc(connection, icon.gc, XCB_GC_FOREGROUND,
+                  (uint32_t[]){fg_color});
     for (size_t i = 0; i < icon.buffer.capacity; ++i) {
-        double value = icon.buffer.data[(icon.buffer.head + i) % icon.buffer.capacity];
+        double value =
+            icon.buffer.data[(icon.buffer.head + i) % icon.buffer.capacity];
         int16_t y = (int16_t)round_((value / 100) * icon.height);
-        xcb_point_t points[] = {{(int16_t)i, (int16_t)icon.height}, {(int16_t)i, (int16_t)(icon.height - y)}};
-        xcb_poly_line(connection, XCB_COORD_MODE_ORIGIN, icon.window, icon.gc, 2, points);
+        xcb_point_t points[] = {{(int16_t)i, (int16_t)icon.height},
+                                {(int16_t)i, (int16_t)(icon.height - y)}};
+        xcb_poly_line(connection, XCB_COORD_MODE_ORIGIN, icon.window, icon.gc,
+                      2, points);
     }
 
     xcb_flush(connection);
@@ -300,7 +339,8 @@ void read_cpu(buffer_t *buffer)
     size_t idle;
 
     FILE *fp = fopen("/proc/stat", "r");
-    if (fscanf(fp, "%*s %zu %zu %zu %zu", &user, &nice, &system, &idle) == EOF) {
+    int res = fscanf(fp, "%*s %zu %zu %zu %zu", &user, &nice, &system, &idle);
+    if (res == EOF) {
         exit(EXIT_FAILURE);
     }
     fclose(fp);
@@ -312,8 +352,8 @@ void read_cpu(buffer_t *buffer)
     size_t total = work + idle;
 
     if (prev_total > 0) {
-        double usage = 100 * (double)(work - prev_work) / (double)(total - prev_total);
-        buffer_push(buffer, usage);
+        buffer_push(buffer, 100 * (double)(work - prev_work) /
+                                (double)(total - prev_total));
     }
 
     prev_work = work;
@@ -331,7 +371,8 @@ void read_mem(buffer_t *buffer)
         size_t value;
 
         while (true) {
-            if (fscanf(fp, "%s %zu%*[^\n]", label, &value) == EOF) {
+            int res = fscanf(fp, "%s %zu%*[^\n]", label, &value);
+            if (res == EOF) {
                 break;
             }
 
@@ -352,8 +393,7 @@ void read_mem(buffer_t *buffer)
         exit(EXIT_FAILURE);
     }
 
-    double used = 100 * (double)(total - available) / (double)(total);
-    buffer_push(buffer, used);
+    buffer_push(buffer, 100 * (double)(total - available) / (double)(total));
 }
 
 int main(int argc, char *argv[])
@@ -371,8 +411,10 @@ int main(int argc, char *argv[])
     int preferred_screen;
     xcb_connection_t *connection = xcb_connect(NULL, &preferred_screen);
 
-    create_icon(connection, "CPU", g_options.cpu_color, g_options.cpu_alert_threshold, &cpu_icon);
-    create_icon(connection, "Memory", g_options.mem_color, g_options.mem_alert_threshold, &mem_icon);
+    create_icon(connection, "CPU", g_options.cpu_color,
+                g_options.cpu_alert_threshold, &cpu_icon);
+    create_icon(connection, "Memory", g_options.mem_color,
+                g_options.mem_alert_threshold, &mem_icon);
 
     dock_window(connection, preferred_screen, cpu_icon.window);
     dock_window(connection, preferred_screen, mem_icon.window);
@@ -396,8 +438,10 @@ int main(int argc, char *argv[])
 
                     dock_window(connection, preferred_screen, icon->window);
 
-                    xcb_get_geometry_cookie_t cookie = xcb_get_geometry(connection, ev->window);
-                    xcb_get_geometry_reply_t *reply = xcb_get_geometry_reply(connection, cookie, NULL);
+                    xcb_get_geometry_cookie_t cookie =
+                        xcb_get_geometry(connection, ev->window);
+                    xcb_get_geometry_reply_t *reply =
+                        xcb_get_geometry_reply(connection, cookie, NULL);
                     if (icon->buffer.capacity != reply->width) {
                         buffer_init(&icon->buffer, reply->width);
                     }
