@@ -16,12 +16,13 @@
 #include <unistd.h>
 #include <xcb/xcb.h>
 
-#define VERSION "0.1"
+#define VERSION "0.2"
 
 char *g_progname = NULL;
 
 struct options_
 {
+    bool verbose;
     uint32_t bg_color;
     uint32_t cpu_color;
     uint32_t mem_color;
@@ -132,23 +133,39 @@ void print_usage()
         "  --mem_alert NUM"
         "      memory alert threshold percentage (default: %zu)\n",
         g_options.mem_alert_threshold);
-    printf("  -v, --version        version number\n");
+    printf("  --verbose            print log messages\n");
+    printf("  -v, --version        print version number\n");
     printf("  -h, --help           print this message\n");
+}
+
+void print_formatted(FILE *stream, const char *format, va_list args)
+{
+    fprintf(stream, "%s: ", g_progname);
+    vfprintf(stream, format, args);
 }
 
 void print_error(const char *format, ...)
 {
     va_list args;
     va_start(args, format);
+    print_formatted(stderr, format, args);
+    va_end(args);
+}
 
-    fprintf(stderr, "%s: ", g_progname);
-    vfprintf(stderr, format, args);
-
+void print_msg(const char *format, ...)
+{
+    if (!g_options.verbose) {
+        return;
+    }
+    va_list args;
+    va_start(args, format);
+    print_formatted(stdout, format, args);
     va_end(args);
 }
 
 void parse_args(int argc, char *argv[])
 {
+    g_options.verbose = false;
     g_options.bg_color = get_color("#101114");
     g_options.cpu_color = get_color("#8AE234");
     g_options.mem_color = get_color("#AD7FA8");
@@ -180,6 +197,8 @@ void parse_args(int argc, char *argv[])
                    strcmp(argv[i], "--help") == 0) {
             print_usage();
             exit(EXIT_SUCCESS);
+        } else if (strcmp(argv[i], "--verbose") == 0) {
+            g_options.verbose = true;
         } else if (strcmp(argv[i], "-v") == 0 ||
                    strcmp(argv[i], "--version") == 0) {
             printf("%s\n", VERSION);
@@ -220,42 +239,47 @@ xcb_atom_t get_atom(xcb_connection_t *connection, const char *name)
     return atom;
 }
 
-void dock_window(xcb_connection_t *connection, int preferred_screen,
-                 xcb_window_t window)
+xcb_window_t get_system_tray(xcb_connection_t *connection,
+                             xcb_atom_t system_tray_atom)
 {
-    xcb_window_t selection_owner_window;
-    {
-        char atom_name[21];
-        snprintf(atom_name, sizeof atom_name, "_NET_SYSTEM_TRAY_S%d",
-                 preferred_screen);
-        xcb_atom_t net_system_tray_sdefault = get_atom(connection, atom_name);
-        xcb_get_selection_owner_cookie_t cookie =
-            xcb_get_selection_owner(connection, net_system_tray_sdefault);
-        xcb_get_selection_owner_reply_t *reply =
-            xcb_get_selection_owner_reply(connection, cookie, NULL);
-        if (!reply) {
-            print_error("xcb_get_selection_owner_reply failed\n");
-            exit(EXIT_FAILURE);
-        }
-        selection_owner_window = reply->owner;
-        free(reply);
+    xcb_get_selection_owner_cookie_t cookie =
+        xcb_get_selection_owner(connection, system_tray_atom);
+    xcb_get_selection_owner_reply_t *reply =
+        xcb_get_selection_owner_reply(connection, cookie, NULL);
+    if (!reply) {
+        print_error("xcb_get_selection_owner_reply failed\n");
+        exit(EXIT_FAILURE);
     }
+    xcb_window_t system_tray = reply->owner;
+    free(reply);
 
-    {
-        xcb_client_message_event_t event;
-        memset(&event, 0, sizeof event);
-        event.response_type = XCB_CLIENT_MESSAGE;
-        event.window = selection_owner_window;
-        event.type = get_atom(connection, "_NET_SYSTEM_TRAY_OPCODE");
-        event.format = 32;
-        event.data.data32[0] = XCB_CURRENT_TIME;
-        event.data.data32[1] = 0;  // request to dock
-        event.data.data32[2] = window;
-        event.data.data32[3] = 0;
-        event.data.data32[4] = 0;
-        xcb_send_event(connection, 0, selection_owner_window,
-                       XCB_EVENT_MASK_NO_EVENT, (const char *)&event);
-    }
+    return system_tray;
+}
+
+void set_structure_event_filter(xcb_connection_t *connection,
+                                xcb_window_t window)
+{
+    xcb_change_window_attributes(connection, window, XCB_CW_EVENT_MASK,
+                                 (uint32_t[]){XCB_EVENT_MASK_STRUCTURE_NOTIFY});
+    xcb_flush(connection);
+}
+
+void dock_to_tray(xcb_connection_t *connection, xcb_window_t system_tray,
+                  xcb_window_t window)
+{
+    xcb_client_message_event_t event;
+    memset(&event, 0, sizeof event);
+    event.response_type = XCB_CLIENT_MESSAGE;
+    event.window = system_tray;
+    event.type = get_atom(connection, "_NET_SYSTEM_TRAY_OPCODE");
+    event.format = 32;
+    event.data.data32[0] = XCB_CURRENT_TIME;
+    event.data.data32[1] = 0;  // SYSTEM_TRAY_REQUEST_DOCK
+    event.data.data32[2] = window;
+    event.data.data32[3] = 0;
+    event.data.data32[4] = 0;
+    xcb_send_event(connection, 0, system_tray, XCB_EVENT_MASK_NO_EVENT,
+                   (const char *)&event);
 
     xcb_flush(connection);
 }
@@ -410,14 +434,32 @@ int main(int argc, char *argv[])
 
     int preferred_screen;
     xcb_connection_t *connection = xcb_connect(NULL, &preferred_screen);
+    char system_tray_name[21];
+    snprintf(system_tray_name, sizeof system_tray_name, "_NET_SYSTEM_TRAY_S%d",
+             preferred_screen);
+    xcb_atom_t system_tray_atom = get_atom(connection, system_tray_name);
 
     create_icon(connection, "CPU", g_options.cpu_color,
                 g_options.cpu_alert_threshold, &cpu_icon);
     create_icon(connection, "Memory", g_options.mem_color,
                 g_options.mem_alert_threshold, &mem_icon);
 
-    dock_window(connection, preferred_screen, cpu_icon.window);
-    dock_window(connection, preferred_screen, mem_icon.window);
+    xcb_window_t system_tray = get_system_tray(connection, system_tray_atom);
+    if (system_tray == 0) {
+        print_msg("Waiting for system tray\n");
+    } else {
+        print_msg("Found system tray %d\n", system_tray);
+        // get notified if system tray died:
+        set_structure_event_filter(connection, system_tray);
+
+        dock_to_tray(connection, system_tray, cpu_icon.window);
+        dock_to_tray(connection, system_tray, mem_icon.window);
+    }
+
+    xcb_screen_t *screen =
+        xcb_setup_roots_iterator(xcb_get_setup(connection)).data;
+    // spy on the root window for system tray changes:
+    set_structure_event_filter(connection, screen->root);
 
     bool tick = false;
     xcb_generic_event_t *event;
@@ -432,11 +474,11 @@ int main(int argc, char *argv[])
                     } else if (ev->window == mem_icon.window) {
                         icon = &mem_icon;
                     } else {
-                        print_error("unknown window\n");
+                        print_error("Unknown window %d\n", ev->window);
                         exit(EXIT_FAILURE);
                     }
 
-                    dock_window(connection, preferred_screen, icon->window);
+                    dock_to_tray(connection, system_tray, icon->window);
 
                     xcb_get_geometry_cookie_t cookie =
                         xcb_get_geometry(connection, ev->window);
@@ -451,6 +493,31 @@ int main(int argc, char *argv[])
 
                     break;
                 }
+                case XCB_CLIENT_MESSAGE: {
+                    xcb_client_message_event_t *ev =
+                        (xcb_client_message_event_t *)event;
+                    if (ev->type == get_atom(connection, "MANAGER") &&
+                        ev->data.data32[1] == system_tray_atom) {
+                        system_tray =
+                            get_system_tray(connection, system_tray_atom);
+                        print_msg("System tray showed up %d\n", system_tray);
+                        // get notified if system tray died:
+                        set_structure_event_filter(connection, system_tray);
+
+                        dock_to_tray(connection, system_tray, cpu_icon.window);
+                        dock_to_tray(connection, system_tray, mem_icon.window);
+                    }
+                    break;
+                }
+                case XCB_DESTROY_NOTIFY: {
+                    xcb_destroy_notify_event_t *ev =
+                        (xcb_destroy_notify_event_t *)event;
+                    if (ev->window == system_tray) {
+                        print_msg("System tray died %d\n", system_tray);
+                        system_tray = 0;
+                    }
+                    break;
+                }
                 default:
                     break;
             }
@@ -459,10 +526,12 @@ int main(int argc, char *argv[])
         }
 
         read_cpu(&cpu_icon.buffer);
-        draw_icon(connection, tick, cpu_icon);
-
         read_mem(&mem_icon.buffer);
-        draw_icon(connection, tick, mem_icon);
+
+        if (system_tray != 0) {
+            draw_icon(connection, tick, cpu_icon);
+            draw_icon(connection, tick, mem_icon);
+        }
 
         sleep(1);
         tick = !tick;
