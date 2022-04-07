@@ -50,6 +50,7 @@ typedef struct icon_
     uint32_t alert_fg_color;
     uint32_t alert_bg_color;
     size_t alert_theshold;
+    bool is_docked;
 } icon_t;
 
 int round_(double d)
@@ -265,8 +266,12 @@ void set_structure_event_filter(xcb_connection_t *connection,
 }
 
 void dock_to_tray(xcb_connection_t *connection, xcb_window_t system_tray,
-                  xcb_window_t window)
+                  icon_t *icon)
 {
+    if (!system_tray || icon->is_docked) {
+        return;
+    }
+
     xcb_client_message_event_t event;
     memset(&event, 0, sizeof event);
     event.response_type = XCB_CLIENT_MESSAGE;
@@ -275,11 +280,13 @@ void dock_to_tray(xcb_connection_t *connection, xcb_window_t system_tray,
     event.format = 32;
     event.data.data32[0] = XCB_CURRENT_TIME;
     event.data.data32[1] = 0;  // SYSTEM_TRAY_REQUEST_DOCK
-    event.data.data32[2] = window;
+    event.data.data32[2] = icon->window;
     event.data.data32[3] = 0;
     event.data.data32[4] = 0;
     xcb_send_event(connection, 0, system_tray, XCB_EVENT_MASK_NO_EVENT,
                    (const char *)&event);
+
+    icon->is_docked = true;
 
     xcb_flush(connection);
 }
@@ -296,6 +303,7 @@ void create_icon(xcb_connection_t *connection, const char *name,
 
     icon->width = 48;
     icon->height = 48;
+    icon->is_docked = false;
 
     icon->fg_color = fg_color;
     icon->bg_color = g_options.bg_color;
@@ -452,8 +460,8 @@ int main(int argc, char *argv[])
         // get notified if system tray died:
         set_structure_event_filter(connection, system_tray);
 
-        dock_to_tray(connection, system_tray, cpu_icon.window);
-        dock_to_tray(connection, system_tray, mem_icon.window);
+        dock_to_tray(connection, system_tray, &cpu_icon);
+        dock_to_tray(connection, system_tray, &mem_icon);
     }
 
     xcb_screen_t *screen =
@@ -478,7 +486,7 @@ int main(int argc, char *argv[])
                         exit(EXIT_FAILURE);
                     }
 
-                    dock_to_tray(connection, system_tray, icon->window);
+                    dock_to_tray(connection, system_tray, icon);
 
                     xcb_get_geometry_cookie_t cookie =
                         xcb_get_geometry(connection, ev->window);
@@ -504,8 +512,8 @@ int main(int argc, char *argv[])
                         // get notified if system tray died:
                         set_structure_event_filter(connection, system_tray);
 
-                        dock_to_tray(connection, system_tray, cpu_icon.window);
-                        dock_to_tray(connection, system_tray, mem_icon.window);
+                        dock_to_tray(connection, system_tray, &cpu_icon);
+                        dock_to_tray(connection, system_tray, &mem_icon);
                     }
                     break;
                 }
@@ -515,6 +523,9 @@ int main(int argc, char *argv[])
                     if (ev->window == system_tray) {
                         print_msg("System tray died %d\n", system_tray);
                         system_tray = 0;
+
+                        cpu_icon.is_docked = false;
+                        mem_icon.is_docked = false;
                     }
                     break;
                 }
